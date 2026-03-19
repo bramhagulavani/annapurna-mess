@@ -6,6 +6,7 @@ import AdminDashboard from './pages/admin/Dashboard'
 import Students from './pages/admin/Students'
 import Attendance from './pages/admin/Attendance'
 import Reports from './pages/admin/Reports'
+import History from './pages/student/History'
 
 const ProtectedRoute = ({ children, role }) => {
   const { user, loading } = useAuth()
@@ -51,6 +52,9 @@ const AppRoutes = () => {
       } />
       <Route path="/admin/reports" element={
   <ProtectedRoute role="admin"><Reports /></ProtectedRoute>
+} />
+<Route path="/student/history" element={
+  <ProtectedRoute role="student"><History /></ProtectedRoute>
 } />
 
       <Route path="*" element={<Navigate to="/" />} />

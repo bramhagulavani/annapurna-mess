@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../services/api'
 
@@ -42,6 +43,7 @@ const Footer = () => (
 
 const Home = () => {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const [todayStatus, setTodayStatus] = useState({ lunch: null, dinner: null })
   const [remaining, setRemaining] = useState({ lunch: 0, dinner: 0, planType: null })
   const [loading, setLoading] = useState({ lunch: false, dinner: false })
@@ -105,12 +107,13 @@ const Home = () => {
     : remaining.planType === 'lunch-only' ? remaining.lunch : remaining.dinner
 
   const navItems = [
-    { key: 'home', icon: '🏠', label: 'Home' },
-    { key: 'menu', icon: '🍽️', label: 'Menu' },
-    { key: 'timings', icon: '⏰', label: 'Timings' },
-    { key: 'about', icon: 'ℹ️', label: 'About' },
-    { key: 'contact', icon: '📞', label: 'Contact' },
-  ]
+  { key: 'home',    icon: '🏠', label: 'Home',    external: false },
+  { key: 'history', icon: '📅', label: 'History', external: true },
+  { key: 'menu',    icon: '🍽️', label: 'Menu',    external: false },
+  { key: 'timings', icon: '⏰', label: 'Timings', external: false },
+  { key: 'about',   icon: 'ℹ️', label: 'About',   external: false },
+  { key: 'contact', icon: '📞', label: 'Contact', external: false },
+]
 
   return (
     <div className="min-h-screen bg-[#f5f7f5]">
@@ -128,7 +131,7 @@ const Home = () => {
             {navItems.map((item) => (
               <button
                 key={item.key}
-                onClick={() => setActiveSection(item.key)}
+                onClick={() => item.external ? navigate('/student/history') : setActiveSection(item.key)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   activeSection === item.key
                     ? 'bg-green-500/20 text-green-400 border border-green-500/30'
@@ -157,7 +160,7 @@ const Home = () => {
           {navItems.map((item) => (
             <button
               key={item.key}
-              onClick={() => setActiveSection(item.key)}
+              onClick={() => item.external ? navigate('/student/history') : setActiveSection(item.key)}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                 activeSection === item.key
                   ? 'bg-green-500/20 text-green-400'
