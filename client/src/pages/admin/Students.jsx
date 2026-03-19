@@ -412,6 +412,11 @@ const Students = () => {
           </div>
         </div>
       )}
+      <footer className="mt-12 py-6 text-center border-t border-gray-100">
+  <p className="text-xs text-gray-300">
+    Crafted with ❤️ by <span className="font-bold text-green-600">Bramha Gulavani</span> &amp; the <span className="font-bold text-green-600">Annapurna Team</span>
+  </p>
+</footer>
     </div>
   )
 }
