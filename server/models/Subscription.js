@@ -10,37 +10,22 @@ const subscriptionSchema = new mongoose.Schema(
     planType: {
       type: String,
       enum: ["lunch-only", "dinner-only", "both"],
-      default: "both",
-    },
-    startDate: {
-      type: Date,
       required: true,
     },
-    endDate: {
-      type: Date,
-      required: true,
+    mealPrice: {
+      type: Number,
+      required: true, // 1500 for single, 3000 for both
     },
-    amount: {
-      type: Number, // Monthly fee amount (for records)
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-    notes: {
-      type: String, // Admin can add notes like "paid in cash", "half month", etc.
-      trim: true,
-    },
+    totalLunchMeals: { type: Number, default: 0 },
+    totalDinnerMeals: { type: Number, default: 0 },
+    remainingLunchMeals: { type: Number, default: 0 },
+    remainingDinnerMeals: { type: Number, default: 0 },
+    startDate: { type: Date, required: true },
+    expectedEndDate: { type: Date, required: true },
+    isActive: { type: Boolean, default: true },
+    notes: { type: String, trim: true },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
-
-// Virtual — check if subscription is currently valid
-subscriptionSchema.virtual("isValid").get(function () {
-  const today = new Date();
-  return this.isActive && this.startDate <= today && this.endDate >= today;
-});
 
 module.exports = mongoose.model("Subscription", subscriptionSchema);

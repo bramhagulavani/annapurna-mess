@@ -1,45 +1,25 @@
 const Attendance = require("../models/Attendance");
 const Subscription = require("../models/Subscription");
 
-// ─── Cutoff times (24hr format) ──────────────────────────────────────────────
-const CUTOFF = {
-  lunch: 12,   // Mark lunch before 12:00 PM
-  dinner: 20,  // Mark dinner before 8:00 PM
-};
-
-// ─── Helper: Strip time from date (for day-level comparisons) ────────────────
 const toDateOnly = (date) => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
 };
 
-// ─── POST /api/attendance/mark ───────────────────────────────────────────────
-// Student marks their own lunch or dinner for today
+// POST /api/attendance/mark
 const markAttendance = async (req, res) => {
   try {
-    const { meal } = req.body; // "lunch" or "dinner"
+    const { meal } = req.body;
 
     if (!meal || !["lunch", "dinner"].includes(meal)) {
       return res.status(400).json({ success: false, message: 'Meal must be "lunch" or "dinner".' });
     }
 
-    // Check cutoff time
-    const now = new Date();
-    const currentHour = now.getHours();
-    if (currentHour >= CUTOFF[meal]) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot mark ${meal} after ${CUTOFF[meal]}:00. Time window has passed.`,
-      });
-    }
-
-    // Check active subscription
+    // Find active subscription
     const subscription = await Subscription.findOne({
       student: req.user._id,
       isActive: true,
-      endDate: { $gte: now },
-      startDate: { $lte: now },
     });
 
     if (!subscription) {
@@ -50,26 +30,86 @@ const markAttendance = async (req, res) => {
     }
 
     // Check if plan covers this meal
-    if (subscription.planType !== "both" && subscription.planType !== `${meal}-only`) {
+    if (meal === "lunch" && subscription.planType === "dinner-only") {
       return res.status(403).json({
         success: false,
-        message: `Your plan (${subscription.planType}) does not include ${meal}.`,
+        message: "Your plan does not include lunch.",
+      });
+    }
+    if (meal === "dinner" && subscription.planType === "lunch-only") {
+      return res.status(403).json({
+        success: false,
+        message: "Your plan does not include dinner.",
       });
     }
 
-    const today = toDateOnly(now);
+    // Check remaining meals
+    if (meal === "lunch" && subscription.remainingLunchMeals <= 0) {
+      return res.status(403).json({
+        success: false,
+        message: "No lunch meals remaining. Contact admin to renew.",
+      });
+    }
+    if (meal === "dinner" && subscription.remainingDinnerMeals <= 0) {
+      return res.status(403).json({
+        success: false,
+        message: "No dinner meals remaining. Contact admin to renew.",
+      });
+    }
 
-    // Upsert — if already marked, update it; if not, create it
-    const attendance = await Attendance.findOneAndUpdate(
-      { student: req.user._id, date: today, meal },
-      { status: "present", markedBy: "self" },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    const today = toDateOnly(new Date());
+
+    // Check if already marked today
+    const existing = await Attendance.findOne({
+      student: req.user._id,
+      date: today,
+      meal,
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: `${meal} already marked for today!`,
+      });
+    }
+
+    // Mark attendance
+    const attendance = await Attendance.create({
+      student: req.user._id,
+      date: today,
+      meal,
+      status: "present",
+      markedBy: "self",
+    });
+
+    // Deduct meal count — carry forward logic
+    // Only deduct when student actually comes, not on absent days
+    if (meal === "lunch") {
+      subscription.remainingLunchMeals -= 1;
+    } else {
+      subscription.remainingDinnerMeals -= 1;
+    }
+
+    // Auto deactivate if all meals used
+    if (
+      subscription.remainingLunchMeals <= 0 &&
+      subscription.remainingDinnerMeals <= 0
+    ) {
+      subscription.isActive = false;
+    }
+
+    await subscription.save();
 
     res.status(200).json({
       success: true,
-      message: `${meal.charAt(0).toUpperCase() + meal.slice(1)} attendance marked!`,
+      message: `${meal.charAt(0).toUpperCase() + meal.slice(1)} marked! Meals remaining: ${
+        meal === "lunch"
+          ? subscription.remainingLunchMeals
+          : subscription.remainingDinnerMeals
+      }`,
       attendance,
+      remainingLunchMeals: subscription.remainingLunchMeals,
+      remainingDinnerMeals: subscription.remainingDinnerMeals,
     });
   } catch (error) {
     console.error("Mark attendance error:", error);
@@ -77,20 +117,17 @@ const markAttendance = async (req, res) => {
   }
 };
 
-// ─── GET /api/attendance/mine?month=2024-01 ──────────────────────────────────
-// Student views their own attendance for a given month
+// GET /api/attendance/mine?month=2024-01
 const getMyAttendance = async (req, res) => {
   try {
-    const { month } = req.query; // Format: "2024-01"
+    const { month } = req.query;
 
     let startDate, endDate;
-
     if (month) {
       const [year, mon] = month.split("-").map(Number);
       startDate = new Date(year, mon - 1, 1);
-      endDate = new Date(year, mon, 0); // Last day of month
+      endDate = new Date(year, mon, 0);
     } else {
-      // Default: current month
       const now = new Date();
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -101,11 +138,9 @@ const getMyAttendance = async (req, res) => {
       date: { $gte: startDate, $lte: endDate },
     }).sort({ date: 1 });
 
-    // Summary counts
     const summary = {
-      totalLunch: records.filter((r) => r.meal === "lunch" && r.status === "present").length,
-      totalDinner: records.filter((r) => r.meal === "dinner" && r.status === "present").length,
-      totalAbsent: records.filter((r) => r.status === "absent").length,
+      totalLunch: records.filter((r) => r.meal === "lunch").length,
+      totalDinner: records.filter((r) => r.meal === "dinner").length,
     };
 
     res.status(200).json({ success: true, records, summary });
@@ -115,8 +150,7 @@ const getMyAttendance = async (req, res) => {
   }
 };
 
-// ─── GET /api/attendance/today ───────────────────────────────────────────────
-// Student checks if they've marked today's meals
+// GET /api/attendance/today
 const getTodayStatus = async (req, res) => {
   try {
     const today = toDateOnly(new Date());
@@ -126,12 +160,24 @@ const getTodayStatus = async (req, res) => {
       date: today,
     });
 
+    // Also get subscription for remaining meals
+    const subscription = await Subscription.findOne({
+      student: req.user._id,
+      isActive: true,
+    });
+
     const status = {
       lunch: records.find((r) => r.meal === "lunch") || null,
       dinner: records.find((r) => r.meal === "dinner") || null,
     };
 
-    res.status(200).json({ success: true, status });
+    res.status(200).json({
+      success: true,
+      status,
+      remainingLunchMeals: subscription?.remainingLunchMeals || 0,
+      remainingDinnerMeals: subscription?.remainingDinnerMeals || 0,
+      planType: subscription?.planType || null,
+    });
   } catch (error) {
     console.error("Get today status error:", error);
     res.status(500).json({ success: false, message: "Server error." });
